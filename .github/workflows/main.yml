@@ -28,6 +28,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Force HTTPS remote URL
+        run: |
+          git remote set-url origin https://github.com/${{ github.repository }}.git
+
       - name: Create output folder
         run: |
           mkdir -p "${{ github.event.inputs.output_folder }}"
@@ -35,6 +39,58 @@ jobs:
 
       - name: Download file
         run: |
+          URL="${{ github.event.inputs.download_url }}"
+          FOLDER="${{ github.event.inputs.output_folder }}"
+          CUSTOM_NAME="${{ github.event.inputs.output_filename }}"
+
+          if [ -n "$CUSTOM_NAME" ]; then
+            FILENAME="$CUSTOM_NAME"
+          else
+            FILENAME=$(basename "$URL")
+          fi
+
+          wget -O "${FOLDER}/${FILENAME}" "$URL"
+          echo "Downloaded: ${FOLDER}/${FILENAME}"
+          ls -lh "${FOLDER}/${FILENAME}"
+
+      - name: Split file into 50 MiB chunks and remove original
+        run: |
+          output_folder="${{ github.event.inputs.output_folder }}"
+          download_url="${{ github.event.inputs.download_url }}"
+          output_filename="${{ github.event.inputs.output_filename }}"
+
+          if [ -n "$output_filename" ]; then
+            file_path="${output_folder}/${output_filename}"
+          else
+            file_path="${output_folder}/$(basename "$download_url")"
+          fi
+
+          prefix="${output_folder}/$(basename "$file_path" | sed 's/\..*//')_part_"
+
+          echo "Splitting '$file_path' into 50 MiB parts..."
+          split -b 50m "$file_path" "$prefix"
+
+          echo "Generated parts:"
+          ls -lh "${output_folder}"/*_part_*
+
+          echo "Removing original file to keep size <100 MiB per file..."
+          if [ -f "$file_path" ]; then
+            rm "$file_path"
+          else
+            echo "Warning: $file_path is not a file."
+          fi
+
+      - name: Commit and push to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ github.event.inputs.output_folder }}"
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Download and split file from ${{ github.event.inputs.download_url }} [skip ci]"
+            git push
+          fi        run: |
           URL="${{ github.event.inputs.download_url }}"
           FOLDER="${{ github.event.inputs.output_folder }}"
           CUSTOM_NAME="${{ github.event.inputs.output_filename }}"
