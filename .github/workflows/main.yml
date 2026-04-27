@@ -75,6 +75,59 @@ jobs:
           echo "Generated parts:"
           ls -lh "${output_folder}"/*_part_*
 
+          # --- 6. حذف فایل اصلی
+          echo "Removing original file to keep size <100 MiB per file..."
+          rm "$file_path"
+
+      # ---------------------------------------
+
+      - name: Commit and push to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ github.event.inputs.output_folder }}"
+          git commit -m "Download and split file from ${{ github.event.inputs.download_url }} [skip ci]" || echo "No changes to commit"
+          git push        run: |
+          URL="${{ github.event.inputs.download_url }}"
+          FOLDER="${{ github.event.inputs.output_folder }}"
+          CUSTOM_NAME="${{ github.event.inputs.output_filename }}"
+
+          if [ -n "$CUSTOM_NAME" ]; then
+            FILENAME="$CUSTOM_NAME"
+          else
+            FILENAME=$(basename "$URL")
+          fi
+
+          wget -O "${FOLDER}/${FILENAME}" "$URL"
+          echo "Downloaded: ${FOLDER}/${FILENAME}"
+          ls -lh "${FOLDER}/${FILENAME}"
+
+      # -------- NEW STEP: SPLIT FILE ----------
+      - name: Split file into 50 MiB chunks and remove original
+        run: |
+          # --- 1. تنظیم متغیرها
+          output_folder="${{ github.event.inputs.output_folder }}"
+          download_url="${{ github.event.inputs.download_url }}"
+          output_filename="${{ github.event.inputs.output_filename }}"
+
+          # --- 2. تعیین مسیر فایل اصلی
+          if [ -n "$output_filename" ]; then
+            file_path="${output_folder}/${output_filename}"
+          else
+            file_path="${output_folder}/$(basename "$download_url")"
+          fi
+
+          # --- 3. تعیین پیشوند نام بخش‌ها
+          prefix="${output_folder}/$(basename "$file_path" | sed 's/\..*//')_part_"
+
+          # --- 4. تقسیم فایل
+          echo "Splitting '$file_path' into 50 MiB parts..."
+          split -b 50m "$file_path" "$prefix"
+
+          # --- 5. نمایش فایل‌های خروجی
+          echo "Generated parts:"
+          ls -lh "${output_folder}"/*_part_*
+
           
       # ---------------------------------------
 
