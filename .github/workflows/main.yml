@@ -21,19 +21,41 @@ on:
 jobs:
   download-and-commit:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Force HTTPS remote URL
-        run: |
-          git remote set-url origin https://github.com/${{ github.repository }}.git
-
       - name: Create output folder
         run: |
+          mkdir -p "${{ github.event.inputs.output_folder }}"
+          echo "Folder ready: ${{ github.event.inputs.output_folder }}"
+
+      - name: Download file
+        run: |
+          URL="${{ github.event.inputs.download_url }}"
+          FOLDER="${{ github.event.inputs.output_folder }}"
+          CUSTOM_NAME="${{ github.event.inputs.output_filename }}"
+          
+          if [ -n "$CUSTOM_NAME" ]; then
+            FILENAME="$CUSTOM_NAME"
+          else
+            FILENAME=$(basename "$URL")
+          fi
+          
+          wget -O "${FOLDER}/${FILENAME}" "$URL"
+          echo "Downloaded: ${FOLDER}/${FILENAME}"
+          ls -lh "${FOLDER}/${FILENAME}"
+
+      - name: Commit and push to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ github.event.inputs.output_folder }}"
+          git commit -m "Download file from ${{ github.event.inputs.download_url }} [skip ci]" || echo "No changes to commit"
+          git push
           mkdir -p "${{ github.event.inputs.output_folder }}"
           echo "Folder ready: ${{ github.event.inputs.output_folder }}"
 
