@@ -75,7 +75,10 @@ jobs:
           echo "Generated parts:"
           ls -lh "${output_folder}"/*_part_*
 
-          
+          # --- 6. حذف فایل اصلی
+          echo "Removing original file to keep size <100 MiB per file..."
+          rm "$file_path"
+
       # ---------------------------------------
 
       - name: Commit and push to repository
@@ -85,4 +88,3 @@ jobs:
           git add "${{ github.event.inputs.output_folder }}"
           git commit -m "Download and split file from ${{ github.event.inputs.download_url }} [skip ci]" || echo "No changes to commit"
           git push
-          
