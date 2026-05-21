@@ -1,0 +1,99 @@
+name: Extract Direct Download Links
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL of the page to extract download links from'
+        required: true
+        type: string
+        default: 'https://pypi.org/project/pipx/1.10.0/'
+      file_pattern:
+        description: 'File extension pattern to filter (e.g., .whl, .tar.gz)'
+        required: false
+        type: string
+        default: '.whl'
+
+jobs:
+  extract-links:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Fetch page content
+        run: |
+          curl -sL "${{ github.event.inputs.url }}" -o page.html
+          echo "Page downloaded successfully"
+          
+      - name: Extract download links
+        run: |
+          echo "## Direct Download Links Found" > links.txt
+          echo "**Source URL:** ${{ github.event.inputs.url }}" >> links.txt
+          echo "" >> links.txt
+          
+          # Extract all links containing the file pattern
+          grep -oP 'href="\K[^"]*${{ github.event.inputs.file_pattern }}[^"]*' page.html | while read -r link; do
+            # Make relative links absolute
+            if [[ $link == /* ]]; then
+              echo "https://pypi.org$link" >> links.txt
+            elif [[ $link == http* ]]; then
+              echo "$link" >> links.txt
+            else
+              echo "https://pypi.org/$link" >> links.txt
+            fi
+          done
+          
+          # If no links found, show all links for debugging
+          if [ $(wc -l < links.txt) -le 3 ]; then
+            echo "" >> links.txt
+            echo "**No matching links found. Showing all links on page for debugging:**" >> links.txt
+            grep -oP 'href="\K[^"]*' page.html | sort -u >> links.txt
+          fi
+          
+          cat links.txt
+          
+      - name: Create detailed JSON output
+        run: |
+          echo "{" > links.json
+          echo "  \"source_url\": \"${{ github.event.inputs.url }}\"," >> links.json
+          echo "  \"file_pattern\": \"${{ github.event.inputs.file_pattern }}\"," >> links.json
+          echo "  \"links\": [" >> links.json
+          
+          first=true
+          grep -oP 'href="\K[^"]*${{ github.event.inputs.file_pattern }}[^"]*' page.html | while read -r link; do
+            if [ "$first" = true ]; then
+              first=false
+            else
+              echo "," >> links.json
+            fi
+            
+            # Make link absolute
+            if [[ $link == /* ]]; then
+              echo -n "    \"https://pypi.org$link\"" >> links.json
+            elif [[ $link == http* ]]; then
+              echo -n "    \"$link\"" >> links.json
+            else
+              echo -n "    \"https://pypi.org/$link\"" >> links.json
+            fi
+          done
+          
+          echo "" >> links.json
+          echo "  ]" >> links.json
+          echo "}" >> links.json
+          
+      - name: Upload results as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: download-links
+          path: |
+            links.txt
+            links.json
+            page.html
+          retention-days: 7
+          
+      - name: Create summary
+        run: |
+          echo "## 📦 Download Links Extracted" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat links.txt >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Tip:** Download the artifact 'download-links' to get the complete page HTML and structured link data." >> $GITHUB_STEP_SUMMARY
