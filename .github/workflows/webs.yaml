@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       target_url:
-        description: 'آدرس کامل صفحه (مثلاً https://google.com)'
+        description: 'آدرس کامل صفحه‌ای که می‌خوای دانلود بشه'
         required: true
         type: string
         default: 'https://example.com'
@@ -14,16 +14,20 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: استخراج اسم سایت از URL
-        run: |
-          # اسم سایت رو از URL درمیاره (مثلاً google.com)
-          SITE_NAME=$(echo "${{ github.event.inputs.target_url }}" | sed -E 's|https?://||' | sed -E 's|www\.||' | cut -d'/' -f1)
-          echo "SITE_NAME=$SITE_NAME" >> $GITHUB_ENV
-          echo "اسم سایت: $SITE_NAME"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: دانلود کامل صفحه
+      - name: استخراج نام سایت و ایجاد پوشه
         run: |
-          mkdir -p "${{ env.SITE_NAME }}"
+          SITE_NAME=$(echo "${{ github.event.inputs.target_url }}" | sed -E 's|https?://||' | sed -E 's|www\.||' | cut -d'/' -f1 | sed -E 's/\..*$//')
+          echo "SITE_NAME=$SITE_NAME" >> $GITHUB_ENV
+          mkdir -p "webs/$SITE_NAME"
+          echo "نام سایت: $SITE_NAME"
+
+      - name: دانلود کامل صفحه با wget
+        run: |
           wget \
             --mirror \
             --page-requisites \
@@ -31,7 +35,7 @@ jobs:
             --convert-links \
             --restrict-file-names=windows \
             --no-parent \
-            --directory-prefix="${{ env.SITE_NAME }}" \
+            --directory-prefix="webs/${{ env.SITE_NAME }}" \
             --wait=1 \
             --limit-rate=500k \
             --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
@@ -39,21 +43,40 @@ jobs:
             --timeout=30 \
             --tries=3 \
             "${{ github.event.inputs.target_url }}"
-          
-      - name: فشرده‌سازی با اسم سایت
+
+      - name: درست کردن لینک‌های داخلی
         run: |
-          cd "${{ env.SITE_NAME }}"
-          zip -r "../${{ env.SITE_NAME }}.zip" .
-          cd ..
-          
-      - name: آپلود فایل نهایی
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.SITE_NAME }}
-          path: ${{ env.SITE_NAME }}.zip
-          retention-days: 7
-          
+          find "webs/${{ env.SITE_NAME }}" -name "*.html" -o -name "*.css" -o -name "*.js" | while read file; do
+            sed -i 's|https://|http://|g' "$file" 2>/dev/null || true
+          done
+
+      - name: ساخت فایل فشرده
+        run: |
+          cd "webs/${{ env.SITE_NAME }}"
+          zip -r "../../${{ env.SITE_NAME }}.zip" .
+          cd ../..
+          echo "فایل فشرده شد: ${{ env.SITE_NAME }}.zip"
+
+      - name: Commit و Push به ریپازیتوری
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ env.SITE_NAME }}.zip" "webs/${{ env.SITE_NAME }}"
+          git commit -m "Download full site: ${{ env.SITE_NAME }} [skip ci]" || echo "No changes to commit"
+          git push
+
       - name: نمایش خلاصه
         run: |
-          echo "## ✅ صفحه ${{ env.SITE_NAME }} با موفقیت دانلود شد" >> $GITHUB_STEP_SUMMARY
-          echo "**آدرس:** ${{ github.event.inputs.target_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ صفحه با موفقیت دانلود شد" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**آدرس اصلی:** ${{ github.event.inputs.target_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**نام سایت:** ${{ env.SITE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 فایل ZIP در مخزن ذخیره شد: **${{ env.SITE_NAME }}.zip**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### نحوه دانلود در Termux:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "curl -L -H \"Accept: application/vnd.github.v3.raw\" \\" >> $GITHUB_STEP_SUMMARY
+          echo "  \"https://api.github.com/repos/${{ github.repository }}/contents/${{ env.SITE_NAME }}.zip\" \\" >> $GITHUB_STEP_SUMMARY
+          echo "  -o ${{ env.SITE_NAME }}.zip" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
