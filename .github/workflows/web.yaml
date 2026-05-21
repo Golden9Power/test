@@ -14,27 +14,31 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: استخراج نام دامنه و ایجاد پوشه webs
+      - name: ایجاد پوشه webs
+        run: mkdir -p webs
+      
+      - name: استخراج نام دامنه
+        id: get-domain
         run: |
-          # استخراج نام دامنه از URL
-          DOMAIN=$(echo "${{ github.event.inputs.target_url }}" | sed -E 's|https?://||' | sed -E 's|/.*||' | sed -E 's|www\.||')
-          echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
-          
-          # ایجاد پوشه webs
-          mkdir -p webs
-          
-      - name: دانلود و ذخیره HTML با نام دامنه
+          DOMAIN=$(echo "${{ github.event.inputs.target_url }}" | awk -F/ '{print $3}' | sed 's/www\.//')
+          echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+      
+      - name: دانلود فایل
         run: |
-          curl -L \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-            -o "webs/${DOMAIN}.html" \
+          cd webs
+          curl -L --fail -o "${{ steps.get-domain.outputs.domain }}.html" \
+            -H "User-Agent: Mozilla/5.0" \
             "${{ github.event.inputs.target_url }}"
-          echo "فایل ذخیره شد: webs/${DOMAIN}.html"
-          echo "حجم فایل دانلود شده: $(du -h webs/${DOMAIN}.html | cut -f1)"
-          
-      - name: آپلود کل پوشه webs
+      
+      - name: بررسی فایل
+        run: |
+          ls -la webs/
+          echo "حجم فایل:"
+          du -sh webs/*
+      
+      - name: آپلود Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: html-page
+          name: webs-files
           path: webs/
           retention-days: 7
