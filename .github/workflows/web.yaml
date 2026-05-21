@@ -1,0 +1,40 @@
+name: Download Single HTML Page
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'آدرس صفحه'
+        required: true
+        type: string
+        default: 'https://google.com'
+
+jobs:
+  simple-download:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: استخراج نام دامنه و ایجاد پوشه webs
+        run: |
+          # استخراج نام دامنه از URL
+          DOMAIN=$(echo "${{ github.event.inputs.target_url }}" | sed -E 's|https?://||' | sed -E 's|/.*||' | sed -E 's|www\.||')
+          echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
+          
+          # ایجاد پوشه webs
+          mkdir -p webs
+          
+      - name: دانلود و ذخیره HTML با نام دامنه
+        run: |
+          curl -L \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+            -o "webs/${DOMAIN}.html" \
+            "${{ github.event.inputs.target_url }}"
+          echo "فایل ذخیره شد: webs/${DOMAIN}.html"
+          echo "حجم فایل دانلود شده: $(du -h webs/${DOMAIN}.html | cut -f1)"
+          
+      - name: آپلود کل پوشه webs
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-page
+          path: webs/
+          retention-days: 7
